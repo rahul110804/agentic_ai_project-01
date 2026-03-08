@@ -87,6 +87,8 @@ yarn-error.log*
 # Testing
 /coverage
 
+frontend/rag-ui/.env.local
+
 
 # ============================================================
 # GENERAL
