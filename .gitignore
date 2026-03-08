@@ -1,0 +1,104 @@
+# ============================================================
+# ROOT .gitignore — covers both backend and frontend
+# ============================================================
+
+
+# ============================================================
+# BACKEND — Python / FastAPI
+# ============================================================
+
+# Environment variables — NEVER commit these (API keys live here)
+backend/.env
+**/.env
+*.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# SQLite database — local only, not for version control
+backend/*.db
+*.db
+
+# Uploaded PDFs — temporary files
+backend/uploads/
+uploads/
+
+# Egg / build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+
+# ============================================================
+# FRONTEND — Next.js / Node
+# ============================================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js build output
+frontend/rag-ui/.next/
+frontend/rag-ui/out/
+.next/
+/out/
+
+# Production build
+/build
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Testing
+/coverage
+
+
+# ============================================================
+# GENERAL
+# ============================================================
+
+# OS files
+.DS_Store
+Thumbs.db
+*.pem
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
