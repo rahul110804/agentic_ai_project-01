@@ -1,0 +1,7 @@
+# Create requirements.txt with these:
+pypdf
+sentence-transformers
+chromadb
+openai
+python-dotenv
+tavily-python==0.3.3
