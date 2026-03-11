@@ -15,8 +15,6 @@ export type DocType =
 
 
 // ── Document Metadata ─────────────────────────────────────────
-// Returned by /upload and /status
-// Shown in StatusBar
 
 export interface DocumentMeta {
   filename:    string
@@ -29,35 +27,52 @@ export interface DocumentMeta {
 
 
 // ── Chat Messages ─────────────────────────────────────────────
-// Every bubble in ChatWindow is one Message
 
 export type MessageRole = "user" | "assistant"
 
 export interface Message {
-  id:        string          // unique id for React key
-  role:      MessageRole
-  content:   string
-  timestamp: string
-  task_mode?: TaskMode       // only on assistant messages
-  doc_type?:  DocType        // only on assistant messages
-  steps?:     AgentStep[]    // thinking steps attached to this message
+  id:         string
+  role:       MessageRole
+  content:    string
+  timestamp:  string
+  task_mode?: TaskMode
+  doc_type?:  DocType
+  steps?:     AgentStep[]
 }
 
 
 // ── Agent Thinking Steps ──────────────────────────────────────
-// Each ReAct step shown in AgentSteps panel
 
 export interface AgentStep {
   iteration:    number
   thought:      string
   action:       string
   action_input: string
-  observation?: string       // arrives slightly after the step
+  observation?: string
 }
 
 
-// ── SSE Events ───────────────────────────────────────────────
-// Every event type that streams in from /chat/stream
+// ── History Types — ChatGPT-style ─────────────────────────────
+
+export interface HistoryTurn {
+  question:  string
+  answer:    string
+  task_mode: string
+  timestamp: string
+}
+
+export interface DocumentHistory {
+  document_id: number
+  filename:    string
+  doc_type:    string
+  num_pages:   number
+  summary:     string
+  loaded_at:   string
+  turns:       HistoryTurn[]
+}
+
+
+// ── SSE Events ────────────────────────────────────────────────
 
 export interface SSETaskDetected {
   type:     "task_detected"
@@ -118,4 +133,8 @@ export interface StatusResponse {
 export interface HistoryResponse {
   turns: { question: string; answer: string }[]
   total: number
+}
+
+export interface DocumentHistoryResponse {
+  documents: DocumentHistory[]
 }

@@ -8,14 +8,12 @@
 #   messages  → one row per question/answer turn
 
 import sqlite3
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Dict
 from contextlib import contextmanager
 
 
-# DB file lives next to main.py inside backend/
 DB_PATH = Path(__file__).parent / "rag_history.db"
 
 
@@ -25,10 +23,9 @@ DB_PATH = Path(__file__).parent / "rag_history.db"
 
 @contextmanager
 def _get_conn():
-    """Context manager — always closes connection even on error."""
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row          # rows behave like dicts
-    conn.execute("PRAGMA journal_mode=WAL") # safer concurrent writes
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
         conn.commit()
@@ -40,7 +37,7 @@ def _get_conn():
 
 
 # ============================================================
-# SCHEMA INIT — called once at startup
+# SCHEMA INIT
 # ============================================================
 
 def init_db() -> None:
@@ -94,10 +91,6 @@ def save_document(
     summary:    str,
     loaded_at:  str,
 ) -> int:
-    """
-    Insert a new document row and return its id.
-    Called every time load_pdf() succeeds.
-    """
     with _get_conn() as conn:
         cursor = conn.execute(
             """
@@ -109,24 +102,11 @@ def save_document(
         return cursor.lastrowid
 
 
-def get_all_documents() -> List[Dict]:
-    """Return all documents ever loaded, newest first."""
-    with _get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM documents ORDER BY id DESC"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
 # ============================================================
 # SESSION OPERATIONS
 # ============================================================
 
 def create_session(document_id: int) -> int:
-    """
-    Create a new session for a document and return its id.
-    A session = one load_pdf() call. Same PDF can have multiple sessions.
-    """
     with _get_conn() as conn:
         cursor = conn.execute(
             "INSERT INTO sessions (document_id, created_at) VALUES (?, ?)",
@@ -146,10 +126,6 @@ def save_message(
     task_mode:  str = "general",
     doc_type:   str = "unknown",
 ) -> int:
-    """
-    Save a single message (user question or assistant answer).
-    Returns the new message id.
-    """
     with _get_conn() as conn:
         cursor = conn.execute(
             """
@@ -175,29 +151,17 @@ def save_turn(
     task_mode:  str = "general",
     doc_type:   str = "unknown",
 ) -> None:
-    """
-    Save a complete question + answer turn as two message rows.
-    Convenience wrapper around save_message() — call this after each answer.
-    """
+    """Save a complete Q&A turn as two message rows."""
     save_message(session_id, "user",      question, task_mode, doc_type)
     save_message(session_id, "assistant", answer,   task_mode, doc_type)
 
 
-def get_session_messages(session_id: int) -> List[Dict]:
-    """Return all messages for a session in chronological order."""
-    with _get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC",
-            (session_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
+# ============================================================
+# HISTORY QUERIES
+# ============================================================
 
 def get_all_history(limit: int = 100) -> List[Dict]:
-    """
-    Return recent conversation turns (question + answer pairs)
-    joined with document info. Used by GET /history endpoint.
-    """
+    """Simple flat list of turns — used as fallback."""
     with _get_conn() as conn:
         rows = conn.execute(
             """
@@ -209,11 +173,11 @@ def get_all_history(limit: int = 100) -> List[Dict]:
                 d.filename  AS filename,
                 a.timestamp AS timestamp
             FROM messages q
-            JOIN messages a  ON a.id      = q.id + 1
-                             AND a.role   = 'assistant'
+            JOIN messages a  ON a.id = q.id + 1
+                             AND a.role = 'assistant'
                              AND a.session_id = q.session_id
-            JOIN sessions s  ON s.id      = q.session_id
-            JOIN documents d ON d.id      = s.document_id
+            JOIN sessions s  ON s.id = q.session_id
+            JOIN documents d ON d.id = s.document_id
             WHERE q.role = 'user'
             ORDER BY q.id DESC
             LIMIT ?
@@ -223,30 +187,94 @@ def get_all_history(limit: int = 100) -> List[Dict]:
         return [dict(r) for r in rows]
 
 
-def get_document_history(filename: str, limit: int = 50) -> List[Dict]:
+def get_documents_with_history() -> List[Dict]:
     """
-    Return all conversation turns for a specific document filename.
-    Useful for showing past sessions for the same PDF.
+    Returns all documents that have at least one message,
+    each with their full list of Q&A turns — newest document first.
+
+    Structure:
+    [
+      {
+        document_id: 1,
+        filename: "resume.pdf",
+        doc_type: "resume",
+        loaded_at: "2024-...",
+        turns: [
+          { question: "...", answer: "...", task_mode: "...", timestamp: "..." },
+          ...
+        ]
+      },
+      ...
+    ]
     """
     with _get_conn() as conn:
-        rows = conn.execute(
+        # Get all documents that have messages
+        docs = conn.execute(
             """
-            SELECT
-                q.content   AS question,
-                a.content   AS answer,
-                a.task_mode AS task_mode,
-                a.timestamp AS timestamp
-            FROM messages q
-            JOIN messages a  ON a.id = q.id + 1
-                             AND a.role = 'assistant'
-                             AND a.session_id = q.session_id
-            JOIN sessions s  ON s.id = q.session_id
-            JOIN documents d ON d.id = s.document_id
-            WHERE q.role = 'user'
-              AND d.filename = ?
-            ORDER BY q.id DESC
-            LIMIT ?
+            SELECT DISTINCT
+                d.id        AS document_id,
+                d.filename  AS filename,
+                d.doc_type  AS doc_type,
+                d.num_pages AS num_pages,
+                d.summary   AS summary,
+                d.loaded_at AS loaded_at
+            FROM documents d
+            JOIN sessions s  ON s.document_id = d.id
+            JOIN messages m  ON m.session_id  = s.id
+            ORDER BY d.id DESC
             """,
-            (filename, limit),
         ).fetchall()
-        return [dict(r) for r in rows]
+
+        result = []
+        for doc in docs:
+            doc_dict = dict(doc)
+
+            # Get all turns for this document across all its sessions
+            turns = conn.execute(
+                """
+                SELECT
+                    q.content   AS question,
+                    a.content   AS answer,
+                    a.task_mode AS task_mode,
+                    a.timestamp AS timestamp
+                FROM messages q
+                JOIN messages a  ON a.id = q.id + 1
+                                 AND a.role = 'assistant'
+                                 AND a.session_id = q.session_id
+                JOIN sessions s  ON s.id = q.session_id
+                WHERE q.role = 'user'
+                  AND s.document_id = ?
+                ORDER BY q.id ASC
+                """,
+                (doc_dict["document_id"],),
+            ).fetchall()
+
+            doc_dict["turns"] = [dict(t) for t in turns]
+
+            # Only include documents that actually have turns
+            if doc_dict["turns"]:
+                result.append(doc_dict)
+
+        return result
+
+
+def get_document_by_id(doc_id: int) -> dict:
+    """Fetch a single document record by its ID."""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id, filename, doc_type, num_pages, summary, loaded_at FROM documents WHERE id = ?",
+            (doc_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError(f"No document with id={doc_id}")
+        return {
+            "id":        row[0],
+            "filename":  row[1],
+            "doc_type":  row[2],
+            "num_pages": row[3],
+            "summary":   row[4],
+            "loaded_at": row[5],
+        }
+    finally:
+        conn.close()

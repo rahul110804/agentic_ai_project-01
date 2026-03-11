@@ -28,7 +28,7 @@ from models import (
     TaskModeEnum,
 )
 from agentic_rag import AgenticRAG, TaskMode
-from database import init_db, save_document, create_session, save_turn, get_all_history
+from database import init_db, save_document, create_session, save_turn, get_all_history, get_documents_with_history
 
 
 # ============================================================
@@ -311,6 +311,25 @@ async def reset():
     )
 
 
+@app.get(
+    "/history/documents",
+    summary = "Get all documents with their full chat history",
+    tags    = ["Chat"],
+)
+async def get_document_history():
+    """
+    Returns all past documents grouped with their Q&A turns.
+    Powers the ChatGPT-style history sidebar.
+    """
+    try:
+        return {"documents": get_documents_with_history()}
+    except Exception as e:
+        raise HTTPException(
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail      = f"Failed to fetch document history: {e}",
+        )
+
+
 @app.get("/health", summary="Health check", tags=["System"])
 async def health():
     return {
@@ -332,3 +351,86 @@ if __name__ == "__main__":
         port   = settings.PORT,
         reload = settings.RELOAD,
     )
+
+
+# ============================================================
+# COMPARE ENDPOINT
+# ============================================================
+
+from compare_rag import CompareRAG
+from pydantic import BaseModel as _BaseModel
+
+class _CompareRequest(_BaseModel):
+    doc_id_a: int
+    doc_id_b: int
+    question: str = "Compare these two documents comprehensively"
+
+_compare_rag = CompareRAG()
+
+
+@app.post(
+    "/compare",
+    summary = "Compare two PDFs side-by-side",
+    tags    = ["Compare"],
+)
+async def compare_pdfs(request: _CompareRequest):
+    """
+    Accepts two document IDs from the history DB.
+    Looks up their filenames, finds the files in uploads/, compares them.
+    """
+    from database import get_document_by_id
+
+    try:
+        doc_a = get_document_by_id(request.doc_id_a)
+        doc_b = get_document_by_id(request.doc_id_b)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Document not found: {e}")
+
+    path_a = str(settings.UPLOAD_DIR / doc_a["filename"])
+    path_b = str(settings.UPLOAD_DIR / doc_b["filename"])
+
+    import os
+    if not os.path.exists(path_a):
+        raise HTTPException(status_code=404, detail=f"File not found on server: {doc_a['filename']}")
+    if not os.path.exists(path_b):
+        raise HTTPException(status_code=404, detail=f"File not found on server: {doc_b['filename']}")
+
+    try:
+        result = _compare_rag.compare(path_a, path_b, request.question)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Comparison failed: {e}",
+        )
+
+
+@app.post(
+    "/compare/upload",
+    summary = "Upload two new PDFs and compare them",
+    tags    = ["Compare"],
+)
+async def compare_upload(
+    file_a:   UploadFile = File(...),
+    file_b:   UploadFile = File(...),
+    question: str        = "Compare these two documents comprehensively",
+):
+    """Upload two PDFs directly and get an instant comparison."""
+    results = []
+    paths   = []
+
+    for f in [file_a, file_b]:
+        if not is_allowed_file(f.filename or ""):
+            raise HTTPException(status_code=400, detail=f"Only PDFs allowed. Got: {f.filename}")
+
+        content = await f.read()
+        path    = get_upload_path(f.filename or "document.pdf")
+        with open(path, "wb") as fp:
+            fp.write(content)
+        paths.append(str(path))
+
+    try:
+        result = _compare_rag.compare(paths[0], paths[1], question)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Comparison failed: {e}")

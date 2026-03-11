@@ -1,45 +1,39 @@
 """
-config.py
----------
-All application settings in one place.
-Every value that might change lives here.
-
-Usage anywhere:
-    from config import settings
+config.py — All application settings in one place.
 """
 
 from pydantic_settings import BaseSettings
 from pathlib import Path
 from typing import List
 
-
 BASE_DIR = Path(__file__).resolve().parent
 
 
 class Settings(BaseSettings):
 
-    # ── Gemini ───────────────────────────────────────────────
+    # ── Gemini API ────────────────────────────────────────────
     GEMINI_API_KEY: str = ""
 
-    # ── File Upload ──────────────────────────────────────────
+    # ── Tavily Web Search ─────────────────────────────────────
+    TAVILY_API_KEY: str = ""
+
+    # ── File Upload ───────────────────────────────────────────
     UPLOAD_DIR:         Path      = BASE_DIR / "uploads"
     MAX_FILE_SIZE_MB:   int       = 20
     ALLOWED_EXTENSIONS: List[str] = [".pdf"]
-    
-    TAVILY_API_KEY: str = ""  
 
-    # ── CORS ─────────────────────────────────────────────────
+    # ── CORS ──────────────────────────────────────────────────
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
 
-    # ── FastAPI ──────────────────────────────────────────────
+    # ── FastAPI ───────────────────────────────────────────────
     API_TITLE:       str = "Agentic RAG API"
     API_VERSION:     str = "1.0.0"
     API_DESCRIPTION: str = "Advanced document analysis API using Agentic RAG."
 
-    # ── Server ───────────────────────────────────────────────
+    # ── Server ────────────────────────────────────────────────
     HOST:   str  = "0.0.0.0"
     PORT:   int  = 8000
     RELOAD: bool = True

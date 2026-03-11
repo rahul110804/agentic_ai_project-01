@@ -7,12 +7,20 @@ import StatusBar    from "./components/StatusBar"
 import ChatWindow   from "./components/ChatWindow"
 import ChatInput    from "./components/ChatInput"
 import HistoryPanel from "./components/HistoryPanel"
+import ComparePanel from "./components/ComparePanel"
 import {
   checkStatus,
   resetDocument,
   streamChat,
+  fetchDocumentHistory,
 } from "@/lib/api"
-import type { DocumentMeta, Message, AgentStep, TaskMode } from "@/types"
+import type {
+  DocumentMeta,
+  Message,
+  AgentStep,
+  TaskMode,
+  DocumentHistory,
+} from "@/types"
 
 // ── helpers ───────────────────────────────────────────────────
 function generateId() {
@@ -20,25 +28,6 @@ function generateId() {
 }
 function now() {
   return new Date().toISOString()
-}
-
-interface HistoryTurn {
-  question: string
-  answer:   string
-}
-
-// ── fetch history from backend ────────────────────────────────
-async function fetchHistory(): Promise<HistoryTurn[]> {
-  try {
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/history`
-    )
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.turns || []
-  } catch {
-    return []
-  }
 }
 
 export default function Page() {
@@ -50,30 +39,48 @@ export default function Page() {
   const [streamingSteps,   setStreamingSteps]   = useState<AgentStep[]>([])
   const [streamingMode,    setStreamingMode]    = useState<TaskMode | null>(null)
   const [isCheckingStatus, setIsCheckingStatus] = useState(true)
-  const [history,          setHistory]          = useState<HistoryTurn[]>([])
   const [isHistoryOpen,    setIsHistoryOpen]    = useState(true)
+  const [showCompare,      setShowCompare]      = useState(false)
+
+  // DocumentHistory[] — one entry per PDF, each with all its turns
+  const [documentHistory,  setDocumentHistory]  = useState<DocumentHistory[]>([])
+  // Which document's conversation is currently shown in chat
+  const [activeDocId,      setActiveDocId]      = useState<number | null>(null)
+
+  // ── refresh document history from backend ─────────────────
+  const refreshHistory = useCallback(async () => {
+    try {
+      const data = await fetchDocumentHistory()
+      const docs: DocumentHistory[] = Array.isArray(data)
+        ? data
+        : Array.isArray((data as any).documents)
+          ? (data as any).documents
+          : []
+      setDocumentHistory(docs)
+    } catch {
+      setDocumentHistory([])
+    }
+  }, [])
 
   // ── on mount ──────────────────────────────────────────────
   useEffect(() => {
     checkStatus()
-      .then(async res => {
-        if (res.is_ready && res.document) {
-          setDocMeta(res.document)
-          // Load existing history if doc already loaded
-          const turns = await fetchHistory()
-          setHistory(turns)
-        }
+      .then(res => {
+        if (res.is_ready && res.document) setDocMeta(res.document)
       })
       .catch(console.error)
       .finally(() => setIsCheckingStatus(false))
-  }, [])
+
+    refreshHistory()
+  }, [refreshHistory])
 
   // ── upload success ────────────────────────────────────────
   function handleUploadSuccess(doc: DocumentMeta) {
     setDocMeta(doc)
     setMessages([])
     setStreamingSteps([])
-    setHistory([])
+    setActiveDocId(null)
+    refreshHistory()
   }
 
   // ── reset ─────────────────────────────────────────────────
@@ -83,33 +90,31 @@ export default function Page() {
     setMessages([])
     setStreamingSteps([])
     setStreamingMode(null)
-    setHistory([])
+    setActiveDocId(null)
   }
 
-  // ── history turn selected — scroll to message in chat ─────
-  function handleHistorySelect(turn: HistoryTurn) {
-    // Find the message in chat and highlight it
-    // If not found (e.g. page was refreshed), add it as read-only
-    const exists = messages.find(
-      m => m.role === "user" && m.content === turn.question
-    )
-    if (!exists) {
-      // Restore the turn as messages so user can read it
-      const userMsg: Message = {
+  // ── select a past document from history sidebar ───────────
+  // Loads all its Q&A turns into the chat window as read-only messages
+  function handleSelectDocument(doc: DocumentHistory) {
+    setActiveDocId(doc.document_id)
+
+    const rebuilt: Message[] = []
+    for (const turn of doc.turns) {
+      rebuilt.push({
         id:        generateId(),
         role:      "user",
         content:   turn.question,
-        timestamp: now(),
-      }
-      const assistantMsg: Message = {
+        timestamp: turn.timestamp ?? now(),
+      })
+      rebuilt.push({
         id:        generateId(),
         role:      "assistant",
         content:   turn.answer,
-        timestamp: now(),
+        timestamp: turn.timestamp ?? now(),
         steps:     [],
-      }
-      setMessages(prev => [...prev, userMsg, assistantMsg])
+      })
     }
+    setMessages(rebuilt)
   }
 
   // ── send message ──────────────────────────────────────────
@@ -125,8 +130,7 @@ export default function Page() {
       content:   question,
       timestamp: now(),
     }
-
-    const assistantId = generateId()
+    const assistantId  = generateId()
     const assistantMsg: Message = {
       id:        assistantId,
       role:      "assistant",
@@ -181,8 +185,8 @@ export default function Page() {
                 }
               : msg
           ))
-          // Refresh history panel after answer arrives
-          fetchHistory().then(setHistory)
+          // Refresh sidebar so new turn appears immediately
+          refreshHistory()
         },
 
         onError: (event) => {
@@ -209,7 +213,7 @@ export default function Page() {
       setIsStreaming(false)
       setStreamingSteps([])
     }
-  }, [isStreaming])
+  }, [isStreaming, refreshHistory])
 
   // ── loading ───────────────────────────────────────────────
   if (isCheckingStatus) {
@@ -226,28 +230,49 @@ export default function Page() {
 
   // ── no doc → upload screen ────────────────────────────────
   if (!docMeta) {
-    return <PDFUpload onUploadSuccess={handleUploadSuccess} />
+    return (
+      <div className="relative">
+        <PDFUpload onUploadSuccess={handleUploadSuccess} />
+
+        {documentHistory.length >= 2 && (
+          <button
+            onClick={() => setShowCompare(true)}
+            className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-2.5
+                       bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium
+                       rounded-xl shadow-lg transition-colors z-40"
+          >
+            📊 Compare PDFs
+          </button>
+        )}
+
+        {showCompare && (
+          <ComparePanel
+            documents={documentHistory}
+            onClose={() => setShowCompare(false)}
+          />
+        )}
+      </div>
+    )
   }
 
   // ── doc loaded → chat screen ──────────────────────────────
   return (
     <div className="h-screen flex flex-col bg-gray-950">
 
-      {/* Top bar */}
       <StatusBar doc={docMeta} onReset={handleReset} />
 
-      {/* Middle — history panel + chat */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Left — history sidebar */}
+        {/* History sidebar — grouped by document */}
         <HistoryPanel
-          history={history}
+          documents={documentHistory}
+          activeDocumentId={activeDocId}
           isOpen={isHistoryOpen}
           onToggle={() => setIsHistoryOpen(p => !p)}
-          onSelect={handleHistorySelect}
+          onSelectDocument={handleSelectDocument}
         />
 
-        {/* Right — chat area */}
+        {/* Chat area */}
         <div className="flex flex-col flex-1 overflow-hidden">
           <ChatWindow
             messages={messages}
@@ -262,6 +287,24 @@ export default function Page() {
         </div>
 
       </div>
+
+      {/* Compare button */}
+      <button
+        onClick={() => setShowCompare(true)}
+        className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-2.5
+                   bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium
+                   rounded-xl shadow-lg transition-colors z-40"
+      >
+        📊 Compare PDFs
+      </button>
+
+      {showCompare && (
+        <ComparePanel
+          documents={documentHistory}
+          onClose={() => setShowCompare(false)}
+        />
+      )}
+
     </div>
   )
 }

@@ -17,7 +17,7 @@ class UniversalRAG:
         # Load models
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        self.llm = genai.GenerativeModel('gemini-2.5-flash')
+        self.llm = genai.GenerativeModel('gemini-1.5-flash')
         
         # Initialize vector DB
         self.chroma_client = chromadb.Client()

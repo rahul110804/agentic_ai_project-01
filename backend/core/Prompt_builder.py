@@ -79,16 +79,25 @@ Summary: {doc_summary}
 {question}
 
 === SOURCE DECISION RULES ===
-Think through which source to use — in this order:
-1. Can I answer this fully from my own training knowledge? (definitions, well-known concepts)
-   → YES: call "finish" immediately. No tools needed.
-2. Is the answer inside the uploaded PDF?
-   → YES: use search_document / critique_document / study_summary / extract_data
-3. Does this need current or external info the PDF does not have?
-   (recent trends, market data, news, industry benchmarks, post-publication events)
-   → YES: use search_web
-4. Does a great answer need BOTH the PDF and the web?
-   → Use search_document first, then search_web, then finish with a combined answer.
+You are NOT limited to the document. You have three sources available — use the best one:
+
+1. DOCUMENT QUESTIONS — anything about the uploaded PDF content:
+   → use search_document / critique_document / study_summary / extract_data
+
+2. CURRENT / EXTERNAL QUESTIONS — trends, news, market data, recent events, industry standards,
+   "latest", "2024", "2025", comparisons with the outside world:
+   → use search_web — ALWAYS search, never refuse these questions
+
+3. COMBINED — question needs both document content AND external context:
+   → use search_document first, then search_web, finish with combined answer
+
+4. SIMPLE FACTS — basic definitions or concepts you already know with certainty:
+   → call "finish" directly, no tools needed
+
+CRITICAL: Never refuse a question by saying you can only answer about the document.
+If it's a general knowledge or current events question → use search_web.
+If it needs the document → use search_document.
+You can always answer — you have tools for everything.
 
 === OTHER RULES ===
 - Match tool to mode: critic→critique_document, study→study_summary, extract→extract_data
