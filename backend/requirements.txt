@@ -1,7 +1,23 @@
-# Create requirements.txt with these:
-pypdf
-sentence-transformers
-chromadb
-openai
-python-dotenv
+# ── FastAPI & Server ──────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+
+# ── AI & Embeddings ───────────────────────────────────────────
+google-genai==1.0.0
+sentence-transformers==3.0.1
+chromadb==0.5.5
+
+# ── PDF Processing ────────────────────────────────────────────
+pypdf==4.3.1
+
+# ── Web Search ────────────────────────────────────────────────
 tavily-python==0.3.3
+
+# ── Config & Env ─────────────────────────────────────────────
+pydantic==2.8.2
+pydantic-settings==2.4.0
+python-dotenv==1.0.1
+
+# ── PostgreSQL (Render production) ───────────────────────────
+psycopg2-binary==2.9.9

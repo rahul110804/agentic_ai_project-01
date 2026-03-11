@@ -1,7 +1,9 @@
 """
 config.py — All application settings in one place.
+Reads from environment variables — works locally (.env) and on Render (dashboard vars).
 """
 
+import os
 from pydantic_settings import BaseSettings
 from pathlib import Path
 from typing import List
@@ -17,12 +19,17 @@ class Settings(BaseSettings):
     # ── Tavily Web Search ─────────────────────────────────────
     TAVILY_API_KEY: str = ""
 
+    # ── Database ──────────────────────────────────────────────
+    # Set automatically by Render via render.yaml
+    # Not set locally → falls back to SQLite
+    DATABASE_URL: str = ""
+
     # ── File Upload ───────────────────────────────────────────
     UPLOAD_DIR:         Path      = BASE_DIR / "uploads"
     MAX_FILE_SIZE_MB:   int       = 20
     ALLOWED_EXTENSIONS: List[str] = [".pdf"]
 
-    # ── CORS ──────────────────────────────────────────────────
+    # ── CORS — add your Vercel URL here after frontend deploy ─
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -36,7 +43,7 @@ class Settings(BaseSettings):
     # ── Server ────────────────────────────────────────────────
     HOST:   str  = "0.0.0.0"
     PORT:   int  = 8000
-    RELOAD: bool = True
+    RELOAD: bool = False       # always False in production
 
     class Config:
         env_file          = ".env"
@@ -51,8 +58,9 @@ def validate_settings() -> None:
     errors = []
 
     if not settings.GEMINI_API_KEY:
-        errors.append("GEMINI_API_KEY is not set in .env")
+        errors.append("GEMINI_API_KEY is not set")
 
+    # Create upload dir if missing (Render ephemeral disk)
     if not settings.UPLOAD_DIR.exists():
         try:
             settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -65,7 +73,8 @@ def validate_settings() -> None:
             print(f"❌ Config error: {err}")
         raise RuntimeError(f"Configuration errors: {errors}")
 
-    print(f"✅ Config validated — upload dir: {settings.UPLOAD_DIR}")
+    db_type = "PostgreSQL" if settings.DATABASE_URL else "SQLite"
+    print(f"✅ Config OK — DB: {db_type} | Upload dir: {settings.UPLOAD_DIR}")
 
 
 def is_allowed_file(filename: str) -> bool:
